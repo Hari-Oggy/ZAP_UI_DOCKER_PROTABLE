@@ -1,0 +1,35 @@
+services:
+  zap:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: zap-webswing:javafx
+    container_name: zap-webswing
+    user: zap
+    command:
+      - sh
+      - -c
+      - "sed -i 's/CONTINUE_FOR_BROWSER/CONTINUE_FOR_USER/; s/\"maxClients\" : 1/\"maxClients\" : 5/' /zap/webswing/webswing.config && exec /zap/zap-webswing.sh"
+    ports:
+      - "8080:8080" # Webswing Web UI
+      - "8090:8090" # ZAP Proxy & API
+      - "8283:8283" # ZAP MCP server (via relay, see zap-mcp-relay)
+    shm_size: '1gb'
+    volumes:
+      # Relative path on Windows (creates a 'zap-data' folder in your compose directory)
+      - ./zap-data:/zap/wrk:rw
+      # Persists custom configuration, add-ons, and certificates inside the container home directory
+      - ./zap-home:/home/zap/.ZAP:rw
+    restart: unless-stopped
+
+  # ZAP's MCP server binds to 127.0.0.1 inside the container (by design, for
+  # security), which Docker port-publishing cannot reach. This relay shares
+  # ZAP's network namespace and forwards 0.0.0.0:8283 -> 127.0.0.1:8282.
+  # OpenCode connects to http://localhost:8283
+  zap-mcp-relay:
+    image: alpine/socat
+    network_mode: "service:zap"
+    command: tcp-listen:8283,bind=0.0.0.0,fork,reuseaddr tcp:127.0.0.1:8282
+    restart: unless-stopped
+    depends_on:
+      - zap
